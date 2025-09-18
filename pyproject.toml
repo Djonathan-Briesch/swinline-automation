@@ -3,16 +3,23 @@ name = "swinline-automation"
 version = "0.1.0"
 description = ""
 authors = [
-    {name = "Your Name",email = "you@example.com"}
+    {name = "Djonathan Briesch",email = "djonathanvinicius@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "paho-mqtt (>=2.1.0,<3.0.0)",
+    "python-dotenv (>=1.1.1,<2.0.0)",
+    "pydantic (>=2.11.9,<3.0.0)"
 ]
 
 [tool.poetry]
 packages = [{include = "swinline_automation", from = "src"}]
 
+
+[tool.poetry.group.dev.dependencies]
+black = "^25.1.0"
+isort = "^6.0.1"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
