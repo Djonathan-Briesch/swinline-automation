@@ -1,7 +1,8 @@
 import RPi.GPIO as GPIO
 import serial
-from swinline_automation.hardware.constants.hardware_pins import HardwarePins
+import time
 
+from swinline_automation.hardware.constants.hardware_pins import HardwarePins
 
 class HardwareController:
     """
@@ -14,11 +15,12 @@ class HardwareController:
     - Leitura de tags RFID via serial
     """
 
-    def __init__(self, serial_port: str = "/dev/serial0", baudrate: int = 115200):
+    def __init__(self, motor_feed_on_time: int, serial_port: str = "/dev/serial0", baudrate: int = 115200):
         """
         Inicializa o hardware, configura os pinos GPIO e a porta serial.
 
         Args:
+            motor_feed_on_time (int): Tempo em segundos em que o motor de alimentação fica ligado 
             serial_port (str): Porta serial para comunicação com a antena RFID.
             baudrate (int): Velocidade de comunicação serial.
         """
@@ -41,7 +43,7 @@ class HardwareController:
         GPIO.setup(HardwarePins.SEPARATION_DOOR_MOTOR_CLOSING, GPIO.OUT)
 
         # Inicializa o serial
-        self.serial = serial.Serial(serial_port, baudrate)
+        self.__serial = serial.Serial(serial_port, baudrate)
 
         # Estado inicial: todos os motores desligados
         GPIO.output(HardwarePins.ENTRY_DOOR_MOTOR_OPENING, 0)
@@ -50,38 +52,62 @@ class HardwareController:
         GPIO.output(HardwarePins.SEPARATION_DOOR_MOTOR_CLOSING, 0)
         GPIO.output(HardwarePins.FEEDER_MOTOR, 0)
 
+
+        # Variaveis auxiliares para controlar o motor de alimentação
+        self.__motor_feed_on_time = motor_feed_on_time
+        self.__feeder_motor_start_time = None
+        self.__feeder_motor_is_on = False
+
     # -------------------- Alimentador --------------------
 
-    def start_feeder_motor(self) -> None:
-        """Liga o motor do alimentador."""
-        GPIO.output(HardwarePins.FEEDER_MOTOR, 1)
+    def dispense_feed(self) -> None:
+        """
+        Liga o motor do alimentador para despejar ração.
 
-    def stop_feeder_motor(self) -> None:
-        """Desliga o motor do alimentador."""
-        GPIO.output(HardwarePins.FEEDER_MOTOR, 0)
+        - Liga o motor se não estiver ligado.
+        - Desliga automaticamente quando passar o tempo configurado.
 
+        """
+        if not self.__feeder_motor_is_on:
+            GPIO.output(HardwarePins.FEEDER_MOTOR, 1)
+            self.__feeder_motor_start_time = time.time()
+            self.__feeder_motor_is_on = True
+        else:
+            if time.time() - self.__feeder_motor_start_time >= self.__motor_feed_on_time:
+                GPIO.output(HardwarePins.FEEDER_MOTOR, 0)
+                self.__feeder_motor_start_time = None
+                self.__feeder_motor_is_on = False
+                
     # -------------------- Porta de entrada --------------------
 
     def open_entry_door(self) -> None:
         """Aciona o motor para abrir a porta de entrada."""
+        if self.__is_entry_door_open():
+            self.__stop_entry_door()
+            return
+        
         GPIO.output(HardwarePins.ENTRY_DOOR_MOTOR_OPENING, 1)
         GPIO.output(HardwarePins.ENTRY_DOOR_MOTOR_CLOSING, 0)
 
     def close_entry_door(self) -> None:
         """Aciona o motor para fechar a porta de entrada."""
+        if self.__is_entry_door_closed():
+            self.__stop_entry_door()
+            return
+        
         GPIO.output(HardwarePins.ENTRY_DOOR_MOTOR_OPENING, 0)
         GPIO.output(HardwarePins.ENTRY_DOOR_MOTOR_CLOSING, 1)
 
-    def stop_entry_door(self) -> None:
+    def __stop_entry_door(self) -> None:
         """Para o motor da porta de entrada."""
         GPIO.output(HardwarePins.ENTRY_DOOR_MOTOR_OPENING, 0)
         GPIO.output(HardwarePins.ENTRY_DOOR_MOTOR_CLOSING, 0)
 
-    def is_entry_door_open(self) -> bool:
+    def __is_entry_door_open(self) -> bool:
         """Retorna True se o limit switch indicar que a porta de entrada está aberta."""
         return GPIO.input(HardwarePins.ENTRY_DOOR_LIMIT_SWITCH_OPEN) == 1
 
-    def is_entry_door_closed(self) -> bool:
+    def __is_entry_door_closed(self) -> bool:
         """Retorna True se o limit switch indicar que a porta de entrada está fechada."""
         return GPIO.input(HardwarePins.ENTRY_DOOR_LIMIT_SWITCH_CLOSED) == 1
 
@@ -89,24 +115,32 @@ class HardwareController:
 
     def open_separation_door(self) -> None:
         """Aciona o motor para abrir a porta de separação."""
+        if self.__is_separation_door_open():
+            self.__stop_separation_door()
+            return
+
         GPIO.output(HardwarePins.SEPARATION_DOOR_MOTOR_OPENING, 1)
         GPIO.output(HardwarePins.SEPARATION_DOOR_MOTOR_CLOSING, 0)
 
     def close_separation_door(self) -> None:
         """Aciona o motor para fechar a porta de separação."""
+        if self.__is_separation_door_closed():
+            self.__stop_separation_door()
+            return
+
         GPIO.output(HardwarePins.SEPARATION_DOOR_MOTOR_OPENING, 0)
         GPIO.output(HardwarePins.SEPARATION_DOOR_MOTOR_CLOSING, 1)
 
-    def stop_separation_door(self) -> None:
+    def __stop_separation_door(self) -> None:
         """Para o motor da porta de separação."""
         GPIO.output(HardwarePins.SEPARATION_DOOR_MOTOR_OPENING, 0)
         GPIO.output(HardwarePins.SEPARATION_DOOR_MOTOR_CLOSING, 0)
 
-    def is_separation_door_open(self) -> bool:
+    def __is_separation_door_open(self) -> bool:
         """Retorna True se o limit switch indicar que a porta de separação está aberta."""
         return GPIO.input(HardwarePins.SEPARATION_DOOR_LIMIT_SWITCH_OPEN) == 1
 
-    def is_separation_door_closed(self) -> bool:
+    def __is_separation_door_closed(self) -> bool:
         """Retorna True se o limit switch indicar que a porta de separação está fechada."""
         return GPIO.input(HardwarePins.SEPARATION_DOOR_LIMIT_SWITCH_CLOSED) == 1
 
@@ -123,6 +157,6 @@ class HardwareController:
         Returns:
             str | None: Tag lida, ou None se não houver dados disponíveis.
         """
-        if self.serial.in_waiting > 0:
-            return self.serial.readline().decode("utf-8").rstrip()
+        if self.__serial.in_waiting > 0:
+            return self.__serial.readline().decode("utf-8").rstrip()
         return None
